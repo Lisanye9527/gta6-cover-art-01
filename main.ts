@@ -11,7 +11,7 @@
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-app.ts';
@@ -38,3 +38,31 @@ writeFileSync(
     app_path_max_bytes: 1000,
   }),
 );
+
+// Vice Panels addition: pre-flight the written output against the same caps and report
+// what was handed in, so an oversized screenshot or a stray file fails here, naming the
+// file, instead of surfacing later as a gate row. Reads only; writes nothing, so the two
+// grader runs still produce identical bytes.
+function verifyOutput(dir) {
+  const shots = readdirSync(join(dir, 'screenshots')).filter((n) => !n.startsWith('.'));
+  for (const name of shots) {
+    const bytes = statSync(join(dir, 'screenshots', name)).size;
+    if (bytes > 262144) throw new Error(`screenshot ${name} is ${bytes} bytes, over the 256 KiB cap`);
+  }
+  let appFiles = 0;
+  let appBytes = 0;
+  const walk = (d) => {
+    for (const name of readdirSync(d)) {
+      const p = join(d, name);
+      const st = statSync(p);
+      if (st.isDirectory()) walk(p);
+      else {
+        appFiles += 1;
+        appBytes += st.size;
+      }
+    }
+  };
+  walk(join(dir, 'app'));
+  console.log(`vice-panels: handed in app/ (${appFiles} files, ${appBytes} bytes) and ${shots.length} screenshots: ${shots.join(', ')}`);
+}
+verifyOutput(out);
